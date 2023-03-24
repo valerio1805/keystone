@@ -1,0 +1,90 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run QEMU",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/${config:directoriesName.buildDir}; ./scripts/run-qemu.sh",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run QEMU (debug)",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/${config:directoriesName.buildDir}; ./scripts/run-qemu.sh -debug",
+            "problemMatcher": []
+        },
+        {
+            "label": "Launch Debug (bbl symbols)",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/${config:directoriesName.buildDir}; riscv64-unknown-linux-gnu-gdb ./sm.build/platform/generic/firmware/fw_payload.elf",
+            "problemMatcher": []
+        },
+        {
+            "label": "Launch Debug (kernel debug info)",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/${config:directoriesName.buildDir}; riscv64-unknown-linux-gnu-gdb ./linux.build/vmlinux",
+            "problemMatcher": []
+        },
+        {
+            "label": "Build All Keystone Components And Update Image",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/qemu; make clean; cd ../${config:directoriesName.buildDir}; cmake ..; make; make image",
+            "problemMatcher": []
+        },
+        {
+            "label": "Setup Debug",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/qemu; make clean; cd ../${config:directoriesName.buildDir}; cmake -DCMAKE_BUILD_TYPE=Debug ..; make; make image",
+            "problemMatcher": []
+        },
+        {
+            "label": "Build Keystone Component",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/${config:directoriesName.buildDir}; cmake ..; make ${input:componentName}",
+            "problemMatcher": []
+        },
+        {
+            "label": "Build QEMU",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/qemu; make clean; cd ../${config:directoriesName.buildDir}; cmake ..; make qemu",
+            "problemMatcher": []
+        },
+        {
+            "label": "Make Image",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/${config:directoriesName.buildDir}; make image",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run Tests",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/${config:directoriesName.buildDir}; make run-tests",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run Tests (from QEMU)",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/${config:directoriesName.buildDir}; make tests; find ./examples/ -name '*.ke' -exec cp \\{\\} ./overlay/root/ \\; cp sm.build/platform/generic/firmware/fw_payload.bin overlay/root/; make image; ./scripts/run-qemu.sh",
+            "problemMatcher": []
+        },
+        {
+            "label": "My Task 1 - Build",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/sdk/build; make; make examples; make install; cd ${workspaceFolder}/${config:directoriesName.buildDir}; make; make examples; find ./examples/ -name '*.ke' -exec cp \\{\\} ./overlay/root/ \\; cp sm.build/platform/generic/firmware/fw_payload.bin overlay/root/; make image; ./scripts/run-qemu.sh",
+            "problemMatcher": []
+        },
+        {
+            "label": "My Task 2 - Copy enclave files",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/${config:directoriesName.buildDir}; find ./examples/ -name '*.ke' -exec cp \\{\\} ./overlay/root/ \\; cp sm.build/platform/generic/firmware/fw_payload.bin overlay/root/",
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "type": "promptString",
+            "id": "componentName",
+            "description": "Name of the component to build (buildroot, linux, sm, bootrom, driver)"
+        }
+    ]
+}

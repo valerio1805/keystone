@@ -1,0 +1,70 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(gdb) Launch - linux",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/${config:directoriesName.buildDir}/linux.build/vmlinux",
+            "args": [],
+            "stopAtEntry": true,
+            "stopAtConnect": true,
+            "cwd": "${workspaceFolder}/${config:directoriesName.buildDir}",
+            "environment": [],
+            "externalConsole": false,
+            "launchCompleteCommand": "None",
+            "MIMode": "gdb",
+            "miDebuggerPath": "${workspaceFolder}/riscv64/bin/riscv64-unknown-linux-gnu-gdb",
+            "miDebuggerServerAddress": "localhost:${input:port}",
+            "targetArchitecture": "x64",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "(gdb) Launch - sm",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/${config:directoriesName.buildDir}/sm.build/platform/generic/firmware/fw_payload.elf",
+            "args": [],
+            "stopAtEntry": true,
+            "stopAtConnect": true,
+            "cwd": "${workspaceFolder}/${config:directoriesName.buildDir}",
+            "environment": [],
+            "externalConsole": false,
+            "launchCompleteCommand": "None",
+            "MIMode": "gdb",
+            "miDebuggerPath": "${workspaceFolder}/riscv64/bin/riscv64-unknown-linux-gnu-gdb",
+            "miDebuggerServerAddress": "localhost:${input:port}",
+            "targetArchitecture": "x64",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+    ],
+    "inputs": [
+        {
+            "type": "promptString",
+            "id": "port",
+            "description": "Number of gdb port to attach to"
+        }
+    ]
+}
