@@ -12,6 +12,10 @@
 #include <sbi/riscv_asm.h>
 #include <sbi/riscv_locks.h>
 #include <sbi/sbi_console.h>
+#include <sbi/sbi_timer.h>
+#include "sha3/sha3.h"
+#include "sm.h"
+#include "ed25519/ed25519.h"
 
 #define ENCL_MAX  16
 
@@ -23,6 +27,20 @@ static spinlock_t encl_lock = SPIN_LOCK_INITIALIZER;
 extern void save_host_regs(void);
 extern void restore_host_regs(void);
 extern byte dev_public_key[PUBLIC_KEY_SIZE];
+
+extern byte CDI[64];
+extern byte ECASM_pk[64];
+extern byte ECASM_priv[64];
+extern mbedtls_x509_crt uff_cert_sm;
+extern byte device_root_key_pub[64];
+
+extern byte cert_sm[512];
+extern int length_cert;
+extern byte cert_root[512];
+extern int length_cert_root;
+extern byte cert_man[512];
+extern byte length_cert_man;
+sha3_ctx_t hash_ctx_to_use;
 
 /****************************
  *
@@ -347,6 +365,10 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
   unsigned long ret;
   int region, shared_region;
 
+   u64 init_value;
+  u64 final_value;
+  init_value = sbi_timer_value();
+
   /* Runtime parameters */
   if(!is_create_args_valid(&create_args))
     return SBI_ERR_SM_ENCLAVE_ILLEGAL_ARGUMENT;
@@ -411,11 +433,164 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
   /* Validate memory, prepare hash and signature for attestation */
   spin_lock(&encl_lock); // FIXME This should error for second enter.
   ret = validate_and_hash_enclave(&enclaves[eid]);
+  
+  // The CDI of the sm is combined with the measure of the enclaves to obtain the CDI of the enclave
+  sha3_init(&hash_ctx_to_use, 64);
+  sha3_update(&hash_ctx_to_use, CDI, 64);
+  sha3_update(&hash_ctx_to_use, enclaves[eid].hash, 64);
+  sha3_final(enclaves[eid].CDI, &hash_ctx_to_use);
+
+  unsigned char seed_for_local_att_key[32];
+
+  for(int i = 0; i < 32; i ++)
+    seed_for_local_att_key[i] = enclaves[eid].CDI[i];
+
+  // The CDI of the enclave is used to create the local attestation keys of the enclave
+  ed25519_create_keypair(enclaves[eid].local_att_pub, enclaves[eid].local_att_priv, seed_for_local_att_key);
+
+  // Associated to the local attestation keys of the enclaves, a new 509 cert is created 
+  mbedtls_x509write_crt_init(&enclaves[eid].crt_local_att);
+
+  // Setting the name of the issuer of the cert
+  ret = mbedtls_x509write_crt_set_issuer_name_mod(&enclaves[eid].crt_local_att, "O=Security Monitor");
+  if (ret != 0)
+  {
+    return 0;
+  }
+  
+  // Setting the name of the subject of the cert
+  ret = mbedtls_x509write_crt_set_subject_name_mod(&enclaves[eid].crt_local_att, "O=Enclave" );
+  if (ret != 0)
+  {
+    return 0;
+  }
+
+  // pk context used to embed the keys of the security monitor
+  mbedtls_pk_context subj_key;
+  mbedtls_pk_init(&subj_key);
+
+  // pk context used to embed the keys of the embedded CA
+  mbedtls_pk_context issu_key;
+  mbedtls_pk_init(&issu_key);
+
+  
+  // The keys of the embedded CA are used to sign the different certs associated to the local attestation keys of the different enclaves  
+  ret = mbedtls_pk_parse_public_key(&issu_key, ECASM_priv, 64, 1);
+  if (ret != 0)
+  {
+    return 0;
+  }
+  ret = mbedtls_pk_parse_public_key(&issu_key, ECASM_pk, 32, 0);
+  if (ret != 0)
+  {
+    return 0;
+  }
+
+  // Parsing the public key of the enclave that will be inserted in its certificate 
+  ret = mbedtls_pk_parse_public_key(&subj_key, enclaves[eid].local_att_pub, 32, 0);
+  if (ret != 0)
+  {
+    return 0;
+  }
+
+  // Variable  used to specify the serial of the cert
+  unsigned char serial[] = {0x0, 0x0, 0x0};
+  serial[2] = eid;
+  
+  // The public key of the enclave is inserted in the structure
+  mbedtls_x509write_crt_set_subject_key(&enclaves[eid].crt_local_att, &subj_key);
+
+  // The private key of the embedded CA is used later to sign the cert
+  mbedtls_x509write_crt_set_issuer_key(&enclaves[eid].crt_local_att, &issu_key);
+  
+  // The serial of the cert is setted
+  mbedtls_x509write_crt_set_serial_raw(&enclaves[eid].crt_local_att, serial, 3);
+  
+  // The algoithm used to do the hash for the signature is specified
+  mbedtls_x509write_crt_set_md_alg(&enclaves[eid].crt_local_att, KEYSTONE_SHA3);
+  
+  // The validity of the crt is specified
+  ret = mbedtls_x509write_crt_set_validity(&enclaves[eid].crt_local_att, "20230101000000", "20240101000000");
+  if (ret != 0)
+  {
+    return 0;
+  }
+  //const char oid_ext[] = {0xff, 0x20, 0xff};
+  //const char oid_ext2[] = {0x55, 0x1d, 0x13};
+  //unsigned char max_path[] = {0x0A};
+  dice_tcbInfo tcbInfo;
+  init_dice_tcbInfo(&tcbInfo);
+ 
+
+  measure m;
+  const unsigned char OID_algo[] = {0x02,0x10,0x03,0x48,0x01,0x65,0x03,0x04,0x02,0x0A};
+  m.oid_len = 10;
+  //unsigned char app[64];
+  my_memcpy(m.OID_algho, OID_algo, m.oid_len);
+  my_memcpy(m.digest, enclaves[eid].hash, 64);
+
+  set_dice_tcbInfo_measure(&tcbInfo, m);
+
+  int dim= 324;
+  unsigned char buf[324];
+
+  if(mbedtls_x509write_crt_set_dice_tcbInfo(&enclaves[eid].crt_local_att, tcbInfo, dim, buf, sizeof(buf))!=0)
+    sbi_printf("\nError setting DICETCB extension!\n");
+
+ 
+
+  // The measure of the enclave is inserted as extension in the cert created for his local attestation keys
+  //mbedtls_x509write_crt_set_extension(&enclaves[eid].crt_local_att, oid_ext, 3, 0, app, 64);
+  //mbedtls_x509write_crt_set_extension(&enclaves[eid].crt_local_att, oid_ext2, 3, 1, max_path, 2);
+  //mbedtls_x509write_crt_set_basic_constraints(&enclaves[eid].crt_local_att, 1, 10);
+
+
+
+  unsigned char cert_der[1024];
+  int effe_len_cert_der = 0;
+  size_t len_cert_der_tot = 1024;
+  ret = mbedtls_x509write_crt_der(&enclaves[eid].crt_local_att, cert_der, len_cert_der_tot, NULL, NULL);
+  if (ret != 0)
+  {
+    effe_len_cert_der = ret;
+    ret = 0;
+  }
+  unsigned char *cert_real = cert_der;
+  int dif  = 0;
+  dif= 1024-effe_len_cert_der;
+  cert_real += dif;
+
+  // The der format of the cert and its length are stored in the specific variables of the enclave structure
+  enclaves[eid].crt_local_att_der_length = effe_len_cert_der;
+  my_memcpy(enclaves[eid].crt_local_att_der, cert_real, effe_len_cert_der);
+
+  
+
+  /*
+  if ((mbedtls_x509_crt_parse_der(&cert_test, cert_real, effe_len_cert_der)) != 0){
+     return 0;
+  }
+  if(my_memcmp( cert_test.dice_tcb_info.fwids[0].digest, enclaves[eid].hash, 64) != 0)
+     sbi_printf("\nError with the extension extension!\n");
+     */
+  // The number of the keypair associated to the created enclave that are not the local attestation keys is set to 0
+  enclaves[eid].n_keypair = 0;
+
+  /*
+  enclaves[eid].SM_attes_key = uff_cert_sm;
+  for(int i = 0; i <32; i ++)
+    enclaves[eid].dev_root_key_pub[i] = dev_public_key[i];
+  */
+
   /* The enclave is fresh if it has been validated and hashed but not run yet. */
   if (ret)
     goto unlock;
 
   enclaves[eid].state = FRESH;
+  final_value = sbi_timer_value();
+  sbi_printf("Ticks needed for the creation of the enclave: %ld\n", final_value - init_value);
+
+
   /* EIDs are unsigned int in size, copy via simple copy */
   *eidptr = eid;
 
@@ -680,3 +855,146 @@ unsigned long get_sealing_key(uintptr_t sealing_key, uintptr_t key_ident,
 
   return SBI_ERR_SM_ENCLAVE_SUCCESS;
 }
+
+unsigned long create_keypair(enclave_id eid, unsigned char* pk, int seed_enc){
+
+  unsigned char seed[PRIVATE_KEY_SIZE];
+  unsigned char pk_app[PUBLIC_KEY_SIZE];
+  unsigned char sk_app[PRIVATE_KEY_SIZE];
+
+  unsigned char app[65];
+
+  // The new keypair is obtained adding at the end of the CDI of the enclave an index, provided by the enclave itself
+  my_memcpy(app, enclaves[eid].CDI, 64);
+  app[64] = seed_enc + '0';
+  
+
+  sha3_ctx_t ctx_hash;
+
+  // The hash function is used to provide the seed for the keys generation
+  sha3_init(&ctx_hash, 64);
+  sha3_update(&ctx_hash, app, 65);
+  sha3_final(seed, &ctx_hash);
+  ed25519_create_keypair(pk_app, sk_app, seed);
+  
+  // The new keypair is stored in the relatives arrays
+  for(int i = 0; i < PUBLIC_KEY_SIZE; i ++)
+    enclaves[eid].pk_array[enclaves[eid].n_keypair][i] = pk_app[i];
+  for(int i = 0; i < PRIVATE_KEY_SIZE; i ++)
+    enclaves[eid].sk_array[enclaves[eid].n_keypair][i] = sk_app[i];
+  
+  // The first keypair that is asked to be created is the Local Device Keys, that is inserted in the relative variables
+  if(enclaves[eid].n_keypair == 0){
+    my_memcpy(enclaves[eid].sk_ldev, sk_app, PRIVATE_KEY_SIZE );
+    my_memcpy(enclaves[eid].pk_ldev, pk_app, PUBLIC_KEY_SIZE);
+  }
+
+  enclaves[eid].n_keypair +=1;
+  
+  my_memcpy(pk, pk_app, PUBLIC_KEY_SIZE);
+
+  // The location in memoty of the private key of the keypair created is clean
+  my_memset(sk_app, 0, 64);
+
+  return 0;
+}
+
+unsigned long get_cert_chain(enclave_id eid, unsigned char** certs, int* sizes){
+
+
+  //my_memcpy(certs[0], enclaves[eid].crt_local_att_der, enclaves[eid].crt_local_att_der_length);
+  //sizes[0] = enclaves[eid].crt_local_att_der_length;
+  
+  // Providing the X509 cert in der format of the ECA and its length
+  my_memcpy(certs[0], cert_sm, length_cert);
+  sizes[0] = length_cert;
+
+  // Providing the X509 cert in der format of the Device Root Key and its length
+  my_memcpy(certs[1], cert_root, length_cert_root);
+  sizes[1] = length_cert_root;
+
+  // Providing the X509 cert in der format of the manufacturer key and its length
+  my_memcpy(certs[2], cert_man, length_cert_man);
+  sizes[2] = length_cert_man;
+
+  return 0;
+}
+
+unsigned long do_crypto_op(enclave_id eid, int flag, unsigned char* data, int data_len, unsigned char* out_data, int* len_out_data, unsigned char* pk){
+
+  sha3_ctx_t ctx_hash;
+  unsigned char fin_hash[64];
+  unsigned char sign[64];
+  int pos = -1;
+  
+  switch (flag){
+    // Sign of TCI|pk_lDev with the private key of the attestation keypair of the enclave.
+    // The sign is placed in out_data. The attestation pk can be obtained calling the get_chain_cert method
+    case 1:
+      sha3_init(&ctx_hash, 64);
+      sha3_update(&ctx_hash, enclaves[eid].hash, 64);
+      sha3_update(&ctx_hash, enclaves[eid].pk_ldev, 32);
+      sha3_final(fin_hash, &ctx_hash);
+
+      //ed25519_sign(sign, fin_hash, 64, enclaves[eid].local_att_pub, enclaves[eid].local_att_priv);
+      ed25519_sign(sign, fin_hash, 64, ECASM_pk, ECASM_priv);
+      my_memcpy(out_data, sign, 64);
+      *len_out_data = 64;
+      return 0;
+    break;
+    /*
+    case 2:
+      // Sign of generic data with a specific private key.
+      // The pk associated with the private key that has to be used is passed by the enclave
+
+      // Finding the private key associated to the public key passed
+      for(int i = 0;  i < enclaves[eid].n_keypair; i ++)
+        if(my_memcmp(enclaves[eid].pk_array[i], pk, 32) == 0){
+          pos = i;
+          break;
+        }
+      if (pos == -1)
+        return -1;
+
+      // Making the signature
+      sha3_init(&ctx_hash, 64);
+      sha3_update(&ctx_hash, data, data_len);
+      sha3_final(fin_hash, &ctx_hash);
+      ed25519_sign(sign, fin_hash, 64, enclaves[eid].pk_array[pos], enclaves[eid].sk_array[pos]);
+
+      // Providing the signature
+      my_memcpy(out_data, sign, 64);
+      *len_out_data = 64;
+      return 0;
+    break;
+    */
+
+    case 2:
+      // Sign of generic data with a specific private key.
+      // In this case the enclave provides directly the hash of the data that have to be signed
+
+      // Finding the private key associated to the public key passed
+      for(int i = 0;  i < enclaves[eid].n_keypair; i ++)
+        if(my_memcmp(enclaves[eid].pk_array[i], pk, 32) == 0){
+          pos = i;
+          break;
+        }
+      if (pos == -1)
+        return -1;
+
+      ed25519_sign(sign, data, data_len, enclaves[eid].pk_array[pos], enclaves[eid].sk_array[pos]);
+
+      // Providing the signature
+      my_memcpy(out_data, sign, 64);
+      *len_out_data = 64;
+      return 0;
+    break;
+    
+    default:
+      return -1;
+    break;
+  }
+  return 0;
+
+}
+

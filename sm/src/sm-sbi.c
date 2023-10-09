@@ -97,3 +97,23 @@ unsigned long sbi_sm_call_plugin(uintptr_t plugin_id, uintptr_t call_id, uintptr
   ret = call_plugin(cpu_get_enclave_id(), plugin_id, call_id, arg0, arg1);
   return ret;
 }
+
+unsigned long sbi_sm_create_keypair(uintptr_t pk, int index)
+{
+  unsigned long ret;
+  ret = create_keypair(cpu_get_enclave_id(), (unsigned char *) pk, index);
+  return ret;
+}
+
+unsigned long
+getting_cert_chain(uintptr_t* certs, int* sizes){
+  unsigned long ret;
+  ret = get_cert_chain(cpu_get_enclave_id(), (unsigned char **) certs, sizes);
+  return ret;
+}
+
+unsigned long sbi_do_crypto_op(int flag, unsigned char* data, int data_len, unsigned char *out_buf, int* out_buf_len, uintptr_t pk){
+  unsigned long ret;
+  ret = do_crypto_op(cpu_get_enclave_id(), flag, data, data_len, out_buf, out_buf_len, (unsigned char *)pk);
+  return ret;
+}
