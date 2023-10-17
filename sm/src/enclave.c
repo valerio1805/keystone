@@ -576,6 +576,8 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
   // The number of the keypair associated to the created enclave that are not the local attestation keys is set to 0
   enclaves[eid].n_keypair = 0;
 
+  //test_commit
+
   /*
   enclaves[eid].SM_attes_key = uff_cert_sm;
   for(int i = 0; i <32; i ++)
