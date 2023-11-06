@@ -397,6 +397,11 @@
  *   ecdsa-with-SHA2(3) 4 } */
 //#define MBEDTLS_OID_ANSI_X9_62_SIG_SHA2 "\x04"
 
+/* ecdsa-with-SHA512 OBJECT IDENTIFIER ::= {
+ *   iso(1) member-body(2) us(840) ansi-X9-62(10045) signatures(4)
+ *   ecdsa-with-SHA2(3) 4 } */
+#define MBEDTLS_OID_ECDSA_SHA512            MBEDTLS_OID_ANSI_X9_62_SIG_SHA2 "\x04"
+
 
 
 

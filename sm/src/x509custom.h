@@ -578,7 +578,13 @@ typedef struct {
     mbedtls_pk_type_t           pk_alg;
 } oid_sig_alg_t;
 
-
+typedef struct mbedtls_asn1_bitstring {
+    size_t len;                 /**< ASN1 length, in octets. */
+    unsigned char unused_bits;  /**< Number of unused bits at the end of the string */
+    unsigned char *p;           /**< Raw ASN1 data for the bit string */
+}
+mbedtls_asn1_bitstring;
+typedef mbedtls_asn1_bitstring mbedtls_x509_bitstring;
 
 
 static const x509_attr_descriptor_t x509_attrs[] =
@@ -848,4 +854,14 @@ int x509_get_uid(unsigned char **p, const unsigned char *end,mbedtls_x509_buf *u
 
         */
 
+int mbedtls_asn1_write_bitstring(unsigned char **p, const unsigned char *start,
+                                 const unsigned char *buf, size_t bits);
+int mbedtls_asn1_get_bitstring(unsigned char **p, const unsigned char *end,
+                               mbedtls_asn1_bitstring *bs);
+int pk_get_ed25519pubkey(unsigned char **p, mbedtls_ed25519_context *ed25519);
+int mbedtls_asn1_write_ed25519_identifier(unsigned char **p, const unsigned char *start,
+                                            const char *oid, size_t oid_len);
+int mbedtls_asn1_get_alg_ed25519(unsigned char **p,
+                         const unsigned char *end,
+                         mbedtls_asn1_buf *alg);
 #endif

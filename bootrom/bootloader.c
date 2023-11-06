@@ -208,14 +208,14 @@ int bootloader()
   mbedtls_x509write_crt_init(&cert);
 
   // Setting the name of the issuer of the cert
-  ret = mbedtls_x509write_crt_set_issuer_name_mod(&cert, "O=Root of Trust");
+  ret = mbedtls_x509write_crt_set_issuer_name_mod(&cert, "CN=Root of Trust");
   if (ret != 0)
   {
     return 0;
   }
   
   // Setting the name of the subject of the cert
-  ret = mbedtls_x509write_crt_set_subject_name_mod(&cert, "O=Security Monitor");
+  ret = mbedtls_x509write_crt_set_subject_name_mod(&cert, "CN=Security Monitor");
   if (ret != 0)
   {
     return 0;
@@ -254,8 +254,7 @@ int bootloader()
 
   
   // Variable  used to specify the serial of the cert
-  unsigned char serial[] = {0x0, 0x0, 0x01};
-  
+  unsigned char serial[] = {0x01};
   // The public key of the security monitor is inserted in the structure
   mbedtls_x509write_crt_set_subject_key(&cert, &subj_key);
 
@@ -263,7 +262,7 @@ int bootloader()
   mbedtls_x509write_crt_set_issuer_key(&cert, &issu_key);
   
   // The serial of the cert is setted
-  mbedtls_x509write_crt_set_serial_raw(&cert, serial, 3);
+  mbedtls_x509write_crt_set_serial_raw(&cert, serial, 1);
   
   // The algoithm used to do the hash for the signature is specified
   mbedtls_x509write_crt_set_md_alg(&cert, KEYSTONE_SHA3);
@@ -284,7 +283,7 @@ int bootloader()
 
   // Adding the measure of the security monitor like extension in its certificate
   //mbedtls_x509write_crt_set_extension(&cert, oid_ext2, 3, 1, max_path, 2);
-  //mbedtls_x509write_crt_set_basic_constraints(&cert, 1, 10);
+  mbedtls_x509write_crt_set_basic_constraints(&cert, 1, 10);
 
   //mbedtls_x509write_crt_set_extension(&cert, oid_ext, 3, 0, sanctum_sm_hash, 64);
   
@@ -345,6 +344,103 @@ int bootloader()
 
   sanctum_length_cert = effe_len_cert_der;
   memcpy(sanctum_cert_sm, cert_real, effe_len_cert_der);
+
+
+   mbedtls_x509write_cert cert_man;
+  mbedtls_x509write_crt_init(&cert_man);
+
+  // Setting the name of the issuer of the cert
+  
+  ret = mbedtls_x509write_crt_set_issuer_name_mod(&cert_man, "CN=Manufacturer");
+  if (ret != 0)
+  {
+    return 0;
+  }
+  
+  // Setting the name of the subject of the cert
+  
+  ret = mbedtls_x509write_crt_set_subject_name_mod(&cert_man, "CN=Manufacturer");
+  if (ret != 0)
+  {
+    return 0;
+  }
+
+  // pk context used to embed the keys of the subject of the cert
+  mbedtls_pk_context subj_key_man;
+  mbedtls_pk_init(&subj_key_man);
+
+  // pk context used to embed the keys of the issuer of the cert
+  mbedtls_pk_context issu_key_man;
+  mbedtls_pk_init(&issu_key_man);
+  
+  // Parsing the private key of the embedded CA that will be used to sign the certificate of the security monitor
+  ret = mbedtls_pk_parse_public_key(&issu_key_man, sanctum_dev_secret_key, 64, 1);
+  if (ret != 0)
+  {
+    return 0;
+  }
+
+  ret = mbedtls_pk_parse_public_key(&issu_key_man, sanctum_dev_public_key, 32, 0);
+  if (ret != 0)
+  {
+    return 0;
+  }
+
+  // Parsing the public key of the security monitor that will be inserted in its certificate 
+  ret = mbedtls_pk_parse_public_key(&subj_key_man, sanctum_dev_public_key, 32, 0);
+  if (ret != 0)
+  {
+    return 0;
+  }
+
+  
+  // Variable  used to specify the serial of the cert
+  unsigned char serial_man[] = {0x0F};
+  
+  // The public key of the security monitor is inserted in the structure
+  mbedtls_x509write_crt_set_subject_key(&cert_man, &subj_key_man);
+
+  // The private key of the embedded CA is used later to sign the cert
+  mbedtls_x509write_crt_set_issuer_key(&cert_man, &issu_key_man);
+  
+  // The serial of the cert is setted
+  mbedtls_x509write_crt_set_serial_raw(&cert_man, serial_man, 1);
+  
+  // The algoithm used to do the hash for the signature is specified
+  mbedtls_x509write_crt_set_md_alg(&cert_man, KEYSTONE_SHA3);
+  
+  // The validity of the crt is specified
+  ret = mbedtls_x509write_crt_set_validity(&cert_man, "20230101000000", "20240101000000");
+  if (ret != 0)
+  {
+    return 0;
+  }
+  mbedtls_x509write_crt_set_basic_constraints(&cert_man, 1, 10);
+
+  
+  unsigned char cert_der_man[1024];
+  int effe_len_cert_der_man;
+
+  // The structure mbedtls_x509write_cert is parsed to create a x509 cert in der format, signed and written in memory
+  ret = mbedtls_x509write_crt_der(&cert_man, cert_der_man, 1024, NULL, NULL);//, test, &len);
+  if (ret != 0)
+  {
+    effe_len_cert_der_man = ret;
+  }
+  else
+  {
+    return 0;
+  }
+
+  unsigned char *cert_real_man = cert_der_man;
+  // effe_len_cert_der stands for the length of the cert, placed starting from the end of the buffer cert_der
+  int dif_man = 1024-effe_len_cert_der_man;
+  // cert_real points to the starts of the cert in der format
+  cert_real_man += dif_man;
+
+  sanctum_length_cert_man = effe_len_cert_der_man;
+  memcpy(sanctum_cert_man, cert_real_man, effe_len_cert_der_man);
+  
 
   //In the real case the cert associated to the device root key is provided by the manufacturer
   //in this scenario it is not possible due to the fact the SM can change, so also its measure can change

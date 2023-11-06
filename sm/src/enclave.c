@@ -452,14 +452,14 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
   mbedtls_x509write_crt_init(&enclaves[eid].crt_local_att);
 
   // Setting the name of the issuer of the cert
-  ret = mbedtls_x509write_crt_set_issuer_name_mod(&enclaves[eid].crt_local_att, "O=Security Monitor");
+  ret = mbedtls_x509write_crt_set_issuer_name_mod(&enclaves[eid].crt_local_att, "CN=Security Monitor");
   if (ret != 0)
   {
     return 0;
   }
   
   // Setting the name of the subject of the cert
-  ret = mbedtls_x509write_crt_set_subject_name_mod(&enclaves[eid].crt_local_att, "O=Enclave" );
+  ret = mbedtls_x509write_crt_set_subject_name_mod(&enclaves[eid].crt_local_att, "CN=Enclave" );
   if (ret != 0)
   {
     return 0;
@@ -494,8 +494,8 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
   }
 
   // Variable  used to specify the serial of the cert
-  unsigned char serial[] = {0x0, 0x0, 0x0};
-  serial[2] = eid;
+  unsigned char serial[] = {0x0};
+  serial[0] = eid;
   
   // The public key of the enclave is inserted in the structure
   mbedtls_x509write_crt_set_subject_key(&enclaves[eid].crt_local_att, &subj_key);
@@ -504,7 +504,7 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
   mbedtls_x509write_crt_set_issuer_key(&enclaves[eid].crt_local_att, &issu_key);
   
   // The serial of the cert is setted
-  mbedtls_x509write_crt_set_serial_raw(&enclaves[eid].crt_local_att, serial, 3);
+  mbedtls_x509write_crt_set_serial_raw(&enclaves[eid].crt_local_att, serial, 1);
   
   // The algoithm used to do the hash for the signature is specified
   mbedtls_x509write_crt_set_md_alg(&enclaves[eid].crt_local_att, KEYSTONE_SHA3);
